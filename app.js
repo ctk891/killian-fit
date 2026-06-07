@@ -1,8 +1,9 @@
 (function () {
   "use strict";
 
-  const STORAGE_KEY = "killianFitState.v1";
-  const SNAPSHOT_VERSION = 1;
+  const STORAGE_KEY = "killianFitState.v2";
+  const OLD_STORAGE_KEY = "killianFitState.v1";
+  const SNAPSHOT_VERSION = 2;
   const SUPABASE_CDN = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
   const ROUTES = [
     ["dashboard", "Dashboard"],
@@ -191,54 +192,47 @@
         console.warn("Unable to parse saved Killian Fit state", error);
       }
     }
-    const seeded = defaultState();
-    saveState(seeded);
-    return seeded;
+    const fresh = defaultState();
+    const old = localStorage.getItem(OLD_STORAGE_KEY);
+    if (old) {
+      try {
+        const oldState = JSON.parse(old);
+        fresh.cloud = { ...fresh.cloud, ...(oldState.cloud || {}) };
+      } catch (error) {
+        console.warn("Unable to inspect old Killian Fit state", error);
+      }
+    }
+    saveState(fresh);
+    return fresh;
   }
 
   function defaultState() {
-    const today = startOfDay(new Date());
-    const logs = seedTrainingLogs(today);
     return {
       profile: {
-        name: "Cody Killian",
-        goal: "Lean muscle gain after marathon base",
-        readiness: 82,
-        recovery: 78
+        name: "",
+        goal: "Lean muscle gain",
+        targetWeight: "",
+        calorieTarget: 2900,
+        proteinTarget: 200,
+        carbsTarget: 300,
+        fatTarget: 80,
+        readiness: 75,
+        recovery: 75
       },
-      logs,
-      completedWorkouts: seedCompletions(today, logs),
-      conditioning: seedConditioning(today),
-      bodyweight: seedBodyweight(today),
+      onboarding: {
+        complete: false,
+        completedAt: ""
+      },
+      logs: [],
+      completedWorkouts: [],
+      conditioning: [],
+      bodyweight: [],
       measurements: {
-        latest: {
-          Chest: 43.2,
-          Arms: 16.4,
-          Waist: 32.1,
-          Quads: 24.7,
-          Shoulders: 50.8
-        },
-        history: [
-          {
-            date: iso(addDays(today, -21)),
-            Chest: 42.6,
-            Arms: 16.0,
-            Waist: 32.8,
-            Quads: 24.1,
-            Shoulders: 50.1
-          },
-          {
-            date: iso(addDays(today, -7)),
-            Chest: 43.0,
-            Arms: 16.3,
-            Waist: 32.3,
-            Quads: 24.6,
-            Shoulders: 50.6
-          }
-        ]
+        latest: {},
+        history: []
       },
       photos: [],
-      nutrition: seedNutrition(today),
+      nutrition: [],
       cloud: {
         supabaseUrl: "",
         anonKey: "",
@@ -265,6 +259,7 @@
       ...base,
       ...saved,
       profile: { ...base.profile, ...(saved.profile || {}) },
+      onboarding: { ...base.onboarding, ...(saved.onboarding || {}) },
       measurements: {
         ...base.measurements,
         ...(saved.measurements || {}),
@@ -285,100 +280,6 @@
 
   function saveState(nextState = state) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
-  }
-
-  function seedTrainingLogs(today) {
-    const logs = [];
-    for (let offset = -13; offset <= -1; offset += 1) {
-      const date = addDays(today, offset);
-      const workout = workoutForDate(date);
-      if (workout.day === 0) continue;
-      workout.exercises.forEach((item, exerciseIndex) => {
-        const loggedSets = Math.min(item.sets, exerciseIndex > 6 ? Math.max(1, item.sets - 1) : item.sets);
-        for (let setIndex = 0; setIndex < loggedSets; setIndex += 1) {
-          const repTarget = estimatedReps(item.reps, setIndex);
-          const fatigueDrop = setIndex > 1 ? 5 : 0;
-          const weight = item.defaultWeight ? Math.max(0, item.defaultWeight - 5 - fatigueDrop + (offset > -7 ? 5 : 0)) : 0;
-          const failure = item.failureTarget || (setIndex === loggedSets - 1 && exerciseIndex % 4 === 0);
-          logs.push({
-            id: uid(),
-            date: iso(date),
-            dayKey: workout.key,
-            workoutTitle: workout.title,
-            exerciseId: item.id,
-            exerciseName: item.name,
-            setType: failure ? "failure" : "working",
-            weight,
-            reps: repTarget,
-            rir: failure ? 0 : Math.max(1, 3 - (setIndex % 3)),
-            failure,
-            pr: offset > -7 && setIndex === 0 && exerciseIndex % 5 === 0,
-            notes: "",
-            volume: volumeFor(weight, repTarget)
-          });
-        }
-      });
-    }
-    return logs;
-  }
-
-  function seedCompletions(today, logs) {
-    const dates = unique(logs.map((entry) => entry.date));
-    return dates.map((date) => {
-      const workout = workoutForDate(new Date(`${date}T12:00:00`));
-      return {
-        id: uid(),
-        date,
-        dayKey: workout.key,
-        title: workout.title,
-        notes: "Logged with intent.",
-        completedAt: `${date}T19:15:00`
-      };
-    });
-  }
-
-  function seedConditioning(today) {
-    const sessions = [];
-    const options = ["Zone 2", "Recovery walk", "HIIT", "Easy run", "Rest"];
-    for (let offset = -13; offset <= -1; offset += 1) {
-      const date = addDays(today, offset);
-      const type = options[Math.abs(offset) % options.length];
-      sessions.push({
-        id: uid(),
-        date: iso(date),
-        type,
-        duration: type === "Rest" ? 0 : type === "HIIT" ? 18 : 34 + (Math.abs(offset) % 12),
-        effort: type === "HIIT" ? 9 : type === "Rest" ? 1 : 5,
-        notes: "",
-        completed: type !== "Rest"
-      });
-    }
-    return sessions;
-  }
-
-  function seedBodyweight(today) {
-    const points = [];
-    const weights = [188.8, 188.4, 188.9, 188.1, 187.8, 188.0, 187.5, 187.2, 187.6, 187.1, 186.9, 187.0, 186.7, 186.5];
-    weights.forEach((weight, index) => {
-      points.push({ id: uid(), date: iso(addDays(today, index - weights.length + 1)), weight });
-    });
-    return points;
-  }
-
-  function seedNutrition(today) {
-    const entries = [];
-    for (let offset = -6; offset <= -1; offset += 1) {
-      entries.push({
-        id: uid(),
-        date: iso(addDays(today, offset)),
-        calories: 2860 + (Math.abs(offset) % 3) * 80,
-        protein: 202 + (Math.abs(offset) % 4) * 5,
-        carbs: 285 + (Math.abs(offset) % 5) * 18,
-        fat: 78 + (Math.abs(offset) % 2) * 7,
-        notes: ""
-      });
-    }
-    return entries;
   }
 
   function getRoute() {
@@ -430,6 +331,14 @@
       const href = item.getAttribute("href") || "";
       if (href) item.classList.toggle("active", href === `#${route}`);
     });
+    document.body.classList.toggle("onboarding-active", !state.onboarding.complete);
+
+    if (!state.onboarding.complete) {
+      app.innerHTML = renderOnboarding();
+      app.focus({ preventScroll: true });
+      renderModal();
+      return;
+    }
 
     const routes = {
       dashboard: renderDashboard,
@@ -445,6 +354,88 @@
     app.focus({ preventScroll: true });
     renderModal();
     updateTimerDisplay();
+  }
+
+  function renderOnboarding() {
+    return `
+      <section class="onboarding-shell">
+        <div class="onboarding-hero surface">
+          <p class="eyebrow">Killian Fit Setup</p>
+          <h1>Start Clean</h1>
+          <p class="lede">No demo logs. No fake PRs. Set your baseline once, then every number in the app belongs to you.</p>
+        </div>
+
+        <form class="onboarding-form grid" data-form="onboarding">
+          <div class="surface panel">
+            <p class="eyebrow">Athlete Profile</p>
+            <h2>Who is this built for?</h2>
+            <div class="form-grid two">
+              ${field("Name", "name", "text", state.profile.name || "Cody Killian")}
+              <div class="field">
+                <label for="goal">Primary Goal</label>
+                <select id="goal" name="goal">
+                  ${["Lean muscle gain", "Body recomposition", "Strength focus", "Athletic performance", "Cut while maintaining strength"].map((goal) => `<option value="${escapeHtml(goal)}" ${state.profile.goal === goal ? "selected" : ""}>${escapeHtml(goal)}</option>`).join("")}
+                </select>
+              </div>
+              ${field(`Current Weight (${state.settings.units})`, "bodyweight", "number", latestBodyweight()?.weight || "", "0.1")}
+              ${field(`Target Weight (${state.settings.units})`, "targetWeight", "number", state.profile.targetWeight || "", "0.1")}
+              <div class="field">
+                <label for="units">Units</label>
+                <select id="units" name="units">
+                  <option value="lb" ${state.settings.units === "lb" ? "selected" : ""}>lb</option>
+                  <option value="kg" ${state.settings.units === "kg" ? "selected" : ""}>kg</option>
+                </select>
+              </div>
+              ${field("Rest Timer Seconds", "restSeconds", "number", state.settings.restSeconds, "5")}
+            </div>
+          </div>
+
+          <div class="surface panel">
+            <p class="eyebrow">Baseline Tape</p>
+            <h2>Optional Measurements</h2>
+            <div class="form-grid two">
+              ${MEASUREMENT_FIELDS.map((name) => field(`${name} (in)`, name, "number", state.measurements.latest[name] || "", "0.1")).join("")}
+            </div>
+          </div>
+
+          <div class="surface panel">
+            <p class="eyebrow">Nutrition Targets</p>
+            <h2>Manual Macro Baseline</h2>
+            <div class="form-grid two">
+              ${field("Calories", "calorieTarget", "number", state.profile.calorieTarget || 2900, "1")}
+              ${field("Protein", "proteinTarget", "number", state.profile.proteinTarget || 200, "1")}
+              ${field("Carbs", "carbsTarget", "number", state.profile.carbsTarget || 300, "1")}
+              ${field("Fat", "fatTarget", "number", state.profile.fatTarget || 80, "1")}
+            </div>
+          </div>
+
+          <div class="surface panel">
+            <p class="eyebrow">Readiness</p>
+            <h2>Starting Recovery</h2>
+            <div class="form-grid two">
+              ${field("Readiness", "readiness", "range", state.profile.readiness, "1", "0", "100")}
+              ${field("Recovery", "recovery", "range", state.profile.recovery, "1", "0", "100")}
+            </div>
+            <label class="switch-row">
+              <span>
+                <strong>Include warm-ups in volume</strong>
+                <span class="muted small">Most lifters should leave this off.</span>
+              </span>
+              <input type="checkbox" name="volumeIncludesWarmups" ${state.settings.volumeIncludesWarmups ? "checked" : ""}>
+            </label>
+          </div>
+
+          <div class="onboarding-actions surface panel">
+            <div>
+              <p class="eyebrow">Ready</p>
+              <h2>Your first real log starts now.</h2>
+              <p class="muted small">The program is preloaded, but all performance data starts empty.</p>
+            </div>
+            <button class="button green" type="submit">Enter Killian Fit</button>
+          </div>
+        </form>
+      </section>
+    `;
   }
 
   function renderDashboard() {
@@ -980,6 +971,10 @@
     const today = iso(new Date());
     const current = nutritionForDate(today);
     const averages = nutritionAverages(7);
+    const calorieTarget = Number(state.profile.calorieTarget) || 2900;
+    const proteinTarget = Number(state.profile.proteinTarget) || 200;
+    const carbsTarget = Number(state.profile.carbsTarget) || 300;
+    const fatTarget = Number(state.profile.fatTarget) || 80;
     return `
       ${screenHeader("Nutrition", "Manual Calories + Macros", "Fast manual entry for recomposition accountability.")}
       <section class="grid grid-2">
@@ -989,10 +984,10 @@
           <form class="grid" data-form="nutrition">
             <div class="form-grid two">
               ${field("Date", "date", "date", today)}
-              ${field("Calories", "calories", "number", current ? current.calories : 2900, "1")}
-              ${field("Protein", "protein", "number", current ? current.protein : 205, "1")}
-              ${field("Carbs", "carbs", "number", current ? current.carbs : 320, "1")}
-              ${field("Fat", "fat", "number", current ? current.fat : 80, "1")}
+              ${field("Calories", "calories", "number", current ? current.calories : calorieTarget, "1")}
+              ${field("Protein", "protein", "number", current ? current.protein : proteinTarget, "1")}
+              ${field("Carbs", "carbs", "number", current ? current.carbs : carbsTarget, "1")}
+              ${field("Fat", "fat", "number", current ? current.fat : fatTarget, "1")}
             </div>
             <div class="field">
               <label for="nutritionNotes">Notes</label>
@@ -1005,14 +1000,14 @@
           <p class="eyebrow">7-Day Average</p>
           <h2>${averages.calories} calories</h2>
           <div class="macro-stack">
-            ${macroRow("Protein", averages.protein, 220, "var(--green)")}
-            ${macroRow("Carbs", averages.carbs, 360, "var(--blue)")}
-            ${macroRow("Fat", averages.fat, 100, "var(--gold)")}
+            ${macroRow("Protein", averages.protein, proteinTarget, "var(--green)")}
+            ${macroRow("Carbs", averages.carbs, carbsTarget, "var(--blue)")}
+            ${macroRow("Fat", averages.fat, fatTarget, "var(--gold)")}
           </div>
           <div class="data-list section-band">
             ${dataRow("Logged Days", averages.days)}
-            ${dataRow("Protein Target", `${averages.protein}/220 g`)}
-            ${dataRow("Training Fuel", `${averages.carbs}/360 g carbs`)}
+            ${dataRow("Protein Target", `${averages.protein}/${proteinTarget} g`)}
+            ${dataRow("Training Fuel", `${averages.carbs}/${carbsTarget} g carbs`)}
           </div>
         </div>
       </section>
@@ -1032,6 +1027,11 @@
             <div class="form-grid two">
               ${field("Name", "name", "text", state.profile.name)}
               ${field("Goal", "goal", "text", state.profile.goal)}
+              ${field(`Target Weight (${state.settings.units})`, "targetWeight", "number", state.profile.targetWeight || "", "0.1")}
+              ${field("Calories", "calorieTarget", "number", state.profile.calorieTarget || 2900, "1")}
+              ${field("Protein", "proteinTarget", "number", state.profile.proteinTarget || 200, "1")}
+              ${field("Carbs", "carbsTarget", "number", state.profile.carbsTarget || 300, "1")}
+              ${field("Fat", "fatTarget", "number", state.profile.fatTarget || 80, "1")}
               ${field("Readiness", "readiness", "range", state.profile.readiness, "1", "0", "100")}
               ${field("Recovery", "recovery", "range", state.profile.recovery, "1", "0", "100")}
               ${field("Rest Timer Seconds", "restSeconds", "number", state.settings.restSeconds, "5")}
@@ -1059,6 +1059,7 @@
           <p class="muted small">Local data stays fast on this device. Supabase sync stores one secure snapshot per signed-in user.</p>
           <div class="actions">
             <button class="ghost-button" type="button" data-action="export-data">Export Data</button>
+            <button class="ghost-button" type="button" data-action="restart-onboarding">Re-run Onboarding</button>
             <button class="danger-button" type="button" data-action="reset-data">Reset App</button>
           </div>
           <div class="data-list section-band">
@@ -1254,6 +1255,13 @@
         render();
       }
     }
+    if (action === "restart-onboarding") {
+      state.onboarding.complete = false;
+      state.onboarding.completedAt = "";
+      saveState();
+      toastMessage("Onboarding opened.");
+      render();
+    }
     if (action === "export-data") exportData();
     if (action === "cloud-push") cloudPush();
     if (action === "cloud-pull") cloudPull();
@@ -1272,6 +1280,7 @@
       if (event.submitter && event.submitter.name) data.append(event.submitter.name, event.submitter.value);
     }
     const kind = form.dataset.form;
+    if (kind === "onboarding") submitOnboarding(data);
     if (kind === "log-set") submitLogSet(data);
     if (kind === "finish-workout") submitFinishWorkout(data);
     if (kind === "bodyweight") submitBodyweight(data);
@@ -1296,6 +1305,54 @@
       if (failureToggle && (event.target.value === "failure" || event.target.value === "pr")) {
         failureToggle.checked = event.target.value === "failure" ? true : failureToggle.checked;
       }
+    }
+  }
+
+  function submitOnboarding(data) {
+    const previousCloud = { ...state.cloud };
+    const next = mergeState(defaultState(), state);
+    const today = iso(new Date());
+    next.cloud = previousCloud;
+    next.profile.name = String(data.get("name") || "Cody Killian").trim();
+    next.profile.goal = String(data.get("goal") || "Lean muscle gain");
+    next.profile.targetWeight = numericOrBlank(data.get("targetWeight"));
+    next.profile.calorieTarget = Number(data.get("calorieTarget")) || 2900;
+    next.profile.proteinTarget = Number(data.get("proteinTarget")) || 200;
+    next.profile.carbsTarget = Number(data.get("carbsTarget")) || 300;
+    next.profile.fatTarget = Number(data.get("fatTarget")) || 80;
+    next.profile.readiness = clamp(Number(data.get("readiness")) || 75, 0, 100);
+    next.profile.recovery = clamp(Number(data.get("recovery")) || 75, 0, 100);
+    next.settings.units = String(data.get("units") || "lb");
+    next.settings.restSeconds = Math.max(15, Number(data.get("restSeconds")) || 120);
+    next.settings.volumeIncludesWarmups = data.get("volumeIncludesWarmups") === "on";
+
+    const bodyweight = Number(data.get("bodyweight"));
+    if (bodyweight) {
+      next.bodyweight = next.bodyweight.filter((entry) => entry.date !== today);
+      next.bodyweight.push({ id: uid(), date: today, weight: bodyweight });
+    }
+
+    const latest = {};
+    MEASUREMENT_FIELDS.forEach((fieldName) => {
+      const value = Number(data.get(fieldName));
+      if (value) latest[fieldName] = value;
+    });
+    next.measurements.latest = latest;
+    if (Object.keys(latest).length) {
+      next.measurements.history.push({ date: today, ...latest });
+    }
+
+    next.onboarding.complete = true;
+    next.onboarding.completedAt = new Date().toISOString();
+    state = next;
+    restTimer.duration = state.settings.restSeconds;
+    route = "dashboard";
+    saveState();
+    toastMessage("Clean slate created.");
+    if (window.location.hash !== "#dashboard") {
+      window.location.hash = "dashboard";
+    } else {
+      render();
     }
   }
 
@@ -1454,6 +1511,11 @@
   function submitSettings(data) {
     state.profile.name = String(data.get("name") || "Cody Killian").trim();
     state.profile.goal = String(data.get("goal") || "").trim();
+    state.profile.targetWeight = numericOrBlank(data.get("targetWeight"));
+    state.profile.calorieTarget = Number(data.get("calorieTarget")) || 2900;
+    state.profile.proteinTarget = Number(data.get("proteinTarget")) || 200;
+    state.profile.carbsTarget = Number(data.get("carbsTarget")) || 300;
+    state.profile.fatTarget = Number(data.get("fatTarget")) || 80;
     state.profile.readiness = clamp(Number(data.get("readiness")) || 0, 0, 100);
     state.profile.recovery = clamp(Number(data.get("recovery")) || 0, 0, 100);
     state.settings.units = String(data.get("units") || "lb");
@@ -1619,6 +1681,10 @@
         toastMessage("No cloud snapshot yet.");
         return;
       }
+      if (!row.data || Number(row.data.version || 0) < 2) {
+        toastMessage("Old cloud snapshot ignored. Push a new clean snapshot.");
+        return;
+      }
       const currentCloud = { ...state.cloud };
       const pulled = mergeState(defaultState(), row.data || {});
       state = {
@@ -1660,6 +1726,7 @@
       version: SNAPSHOT_VERSION,
       updatedAt: new Date().toISOString(),
       profile: state.profile,
+      onboarding: state.onboarding,
       logs: state.logs,
       completedWorkouts: state.completedWorkouts,
       conditioning: state.conditioning,
@@ -2202,6 +2269,11 @@
     return clamp(Math.round(Number(value) || 0), min, max);
   }
 
+  function numericOrBlank(value) {
+    const number = Number(value);
+    return number ? number : "";
+  }
+
   function slug(value) {
     return String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
   }
@@ -2209,10 +2281,6 @@
   function uid() {
     if (globalThis.crypto && globalThis.crypto.randomUUID) return globalThis.crypto.randomUUID();
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  }
-
-  function unique(values) {
-    return Array.from(new Set(values));
   }
 
   function escapeHtml(value) {

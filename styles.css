@@ -1239,6 +1239,53 @@ button.exercise-card {
   display: initial;
 }
 
+.onboarding-active .app-shell {
+  display: block;
+}
+
+.onboarding-active .side-rail,
+.onboarding-active .topbar,
+.onboarding-active .bottom-nav {
+  display: none;
+}
+
+.onboarding-active .app-frame {
+  padding-bottom: 0;
+}
+
+.onboarding-shell {
+  display: grid;
+  gap: 14px;
+  width: min(980px, 100%);
+  margin: 0 auto;
+}
+
+.onboarding-hero {
+  padding: 28px;
+  background:
+    linear-gradient(135deg, rgba(53, 167, 255, 0.12), rgba(201, 166, 90, 0.08)),
+    #090b0f;
+}
+
+.onboarding-hero h1 {
+  margin-bottom: 12px;
+}
+
+.onboarding-form {
+  gap: 14px;
+}
+
+.onboarding-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.onboarding-actions h2 {
+  margin-bottom: 6px;
+}
+
 @media (max-width: 1040px) {
   .grid-4 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1444,6 +1491,15 @@ button.exercise-card {
 
   .hide-mobile {
     display: none;
+  }
+
+  .onboarding-hero {
+    padding: 20px;
+  }
+
+  .onboarding-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 
