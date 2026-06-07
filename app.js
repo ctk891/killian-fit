@@ -249,7 +249,8 @@
       },
       ui: {
         activeExerciseIndex: {},
-        lastCompletion: null
+        lastCompletion: null,
+        moreMenuOpen: false
       },
       settings: {
         units: "lb",
@@ -272,7 +273,7 @@
       },
       settings: { ...base.settings, ...(saved.settings || {}) },
       cloud: { ...base.cloud, ...(saved.cloud || {}) },
-      ui: { ...base.ui, ...(saved.ui || {}) },
+      ui: { ...base.ui, ...(saved.ui || {}), moreMenuOpen: false },
       logs: Array.isArray(saved.logs) ? saved.logs : base.logs,
       completedWorkouts: Array.isArray(saved.completedWorkouts) ? saved.completedWorkouts : base.completedWorkouts,
       conditioning: Array.isArray(saved.conditioning) ? saved.conditioning : base.conditioning,
@@ -390,7 +391,7 @@
     const bottom = document.getElementById("bottomNav");
     const nav = ROUTES.map(([key, label]) => navItem(key, label)).join("");
     rail.innerHTML = nav;
-    bottom.innerHTML = nav;
+    bottom.innerHTML = renderBottomNav();
   }
 
   function navItem(key, label) {
@@ -402,14 +403,32 @@
     `;
   }
 
+  function renderBottomNav() {
+    const primary = [
+      ["dashboard", "Home"],
+      ["today", "Train"],
+      ["program", "Plan"],
+      ["progress", "Progress"]
+    ];
+    const isMoreActive = ["analytics", "photos", "nutrition", "settings"].includes(route);
+    return `
+      ${primary.map(([key, label]) => navItem(key, label)).join("")}
+      <button class="nav-item mobile-more-button ${isMoreActive || state.ui.moreMenuOpen ? "active" : ""}" type="button" data-action="open-more">
+        <span class="nav-glyph glyph-more" aria-hidden="true"></span>
+        <span>More</span>
+      </button>
+    `;
+  }
+
   function shortLabel(label) {
     return label.replace("Today's Workout", "Today");
   }
 
   function render() {
+    renderNavigation();
     document.querySelectorAll(".nav-item").forEach((item) => {
       const href = item.getAttribute("href") || "";
-      item.classList.toggle("active", href === `#${route}`);
+      if (href) item.classList.toggle("active", href === `#${route}`);
     });
 
     const routes = {
@@ -489,7 +508,7 @@
         </div>
       </section>
 
-      <section class="grid grid-4 section-band">
+      <section class="grid grid-4 section-band priority-metrics">
         ${metric("Bodyweight", body ? `${body.weight} ${state.settings.units}` : "--", body ? `${signed(bodyDelta)} ${state.settings.units} / 7 days` : "No weigh-ins")}
         ${metric("Today's Sets", `${loggedWorkoutSets}/${plannedSets}`, `${progress}% of target work`)}
         ${metric("Average RIR", averageRir(weekLogs), "Weekly logged sets")}
@@ -1202,6 +1221,19 @@
     }
     if (action === "start-rest" || action === "quick-rest") startRestTimer();
     if (action === "reset-rest") resetRestTimer();
+    if (action === "open-more") {
+      state.ui.moreMenuOpen = true;
+      renderNavigation();
+      renderModal();
+    }
+    if (action === "close-more") {
+      state.ui.moreMenuOpen = false;
+      renderNavigation();
+      renderModal();
+    }
+    if (action === "more-route") {
+      state.ui.moreMenuOpen = false;
+    }
     if (action === "close-modal") {
       state.ui.lastCompletion = null;
       saveState();
@@ -1456,7 +1488,13 @@
       const client = await getCloudClient();
       if (!client) return;
       const response = action === "signup"
-        ? await client.auth.signUp({ email, password })
+        ? await client.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: authRedirectUrl()
+          }
+        })
         : await client.auth.signInWithPassword({ email, password });
       if (response.error) throw response.error;
       const user = response.data.user || response.data.session?.user || null;
@@ -1692,11 +1730,7 @@
 
   function renderModal() {
     const completion = state.ui.lastCompletion;
-    if (!completion) {
-      modalRoot.innerHTML = "";
-      return;
-    }
-    modalRoot.innerHTML = `
+    const completionHtml = completion ? `
       <div class="modal-backdrop">
         <div class="modal">
           <p class="eyebrow">Volume Logged</p>
@@ -1714,6 +1748,39 @@
           </div>
         </div>
       </div>
+    ` : "";
+    const moreHtml = state.ui.moreMenuOpen ? `
+      <div class="more-backdrop">
+        <button class="more-scrim" type="button" data-action="close-more" aria-label="Close menu"></button>
+        <div class="more-sheet">
+          <div class="row-between">
+            <div>
+              <p class="eyebrow">More</p>
+              <h2>Tools</h2>
+            </div>
+            <button class="ghost-button more-close" type="button" data-action="close-more">Done</button>
+          </div>
+          <div class="more-grid">
+            ${moreItem("analytics", "Analytics", "Charts and consistency")}
+            ${moreItem("photos", "Photos", "Progress check-ins")}
+            ${moreItem("nutrition", "Nutrition", "Calories and macros")}
+            ${moreItem("settings", "Settings", "Profile and cloud sync")}
+          </div>
+        </div>
+      </div>
+    ` : "";
+    modalRoot.innerHTML = `${completionHtml}${moreHtml}`;
+  }
+
+  function moreItem(key, label, caption) {
+    return `
+      <a class="more-item" href="#${key}" data-action="more-route">
+        <span class="nav-glyph glyph-${key}" aria-hidden="true"></span>
+        <span>
+          <strong>${escapeHtml(label)}</strong>
+          <small>${escapeHtml(caption)}</small>
+        </span>
+      </a>
     `;
   }
 
@@ -2044,6 +2111,10 @@
     if (state.cloud.userId || cloudUser) return state.cloud.email || "Authenticated Supabase session detected.";
     if (state.cloud.supabaseUrl && state.cloud.anonKey) return "Sign in or create an account, then push your current data.";
     return "Add your Supabase Project URL and publishable/anon key to enable cloud sync.";
+  }
+
+  function authRedirectUrl() {
+    return `${window.location.origin}${window.location.pathname}`;
   }
 
   function setTypeLabel(entry) {

@@ -1,9 +1,9 @@
-const CACHE_NAME = "killian-fit-v2";
+const CACHE_NAME = "killian-fit-v5";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css",
-  "./app.js",
+  "./styles.css?v=5",
+  "./app.js?v=5",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
